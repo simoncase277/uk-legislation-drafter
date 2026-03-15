@@ -960,7 +960,7 @@ function App() {
                       {state.wizardStep > 0 && <button className="btn ghost" onClick={() => dispatch({ type: 'SET_WIZARD_STEP', step: state.wizardStep - 1 })}>Back</button>}
                       {state.wizardStep < wizardQuestions.length - 1
                         ? <button className="btn primary" onClick={() => dispatch({ type: 'SET_WIZARD_STEP', step: state.wizardStep + 1 })} disabled={!state.wizardAnswers[wizardQ.id]}>Next</button>
-                        : <button className="btn primary" onClick={handleWizardSubmit} disabled={!state.wizardAnswers[wizardQ.id]}>Generate Draft</button>
+                        : <button className="btn primary" onClick={handleWizardSubmit} disabled={!state.wizardAnswers[wizardQ.id] || state.isLoading}>{state.isLoading ? 'Generating…' : 'Generate Draft'}</button>
                       }
                     </div>
                   </>
@@ -979,7 +979,7 @@ function App() {
             {state.isLoading ? <Loading msg={loadingMessages[loadingMsgIdx]} /> : (
               <div>
                 <textarea className="text-input" style={{ minHeight: 200 }} placeholder="e.g. I want a law that makes it illegal for supermarkets to throw away unsold food that is still edible..." value={state.freeformInput} onChange={e => dispatch({ type: 'SET_FREEFORM', value: e.target.value })} />
-                <div className="btn-row"><button className="btn primary" onClick={handleFreeformSubmit} disabled={!state.freeformInput.trim()}>Generate Draft</button></div>
+                <div className="btn-row"><button className="btn primary" onClick={handleFreeformSubmit} disabled={!state.freeformInput.trim() || state.isLoading}>{state.isLoading ? 'Generating…' : 'Generate Draft'}</button></div>
               </div>
             )}
           </div>
@@ -1000,7 +1000,7 @@ function App() {
                   <div>
                     <p style={{ color: '#8a7a5a', marginBottom: 10, fontSize: '.88em' }}>{state.selectedTemplate.id === 'custom' ? 'Describe your legislation:' : 'Add specific details or customisations:'}</p>
                     <textarea className="text-input" placeholder={state.selectedTemplate.id === 'custom' ? 'Describe your legislation here...' : 'e.g. specific substances, geographic areas, penalty amounts...'} value={state.templateCustom} onChange={e => dispatch({ type: 'SET_TEMPLATE_CUSTOM', value: e.target.value })} />
-                    <div className="btn-row"><button className="btn primary" onClick={handleTemplateSubmit} disabled={state.selectedTemplate.id === 'custom' ? !state.templateCustom.trim() : false}>Generate Draft</button></div>
+                    <div className="btn-row"><button className="btn primary" onClick={handleTemplateSubmit} disabled={state.selectedTemplate.id === 'custom' ? !state.templateCustom.trim() : false || state.isLoading}>{state.isLoading ? 'Generating…' : 'Generate Draft'}</button></div>
                   </div>
                 )}
               </div>
@@ -1047,7 +1047,7 @@ function App() {
                     {state.revisitError && <div className="error-box" style={{ marginBottom: 10 }}>{state.revisitError}</div>}
                     {state.revisitLoading ? <div style={{ textAlign: 'center', padding: 16 }}><div className="spinner sm" /></div> : (
                       <><textarea className="text-input" style={{ minHeight: 100 }} placeholder="e.g. I want to add a duty on local authorities to report annually..." value={state.revisitInput} onChange={e => dispatch({ type: 'SET_REVISIT_INPUT', value: e.target.value })} />
-                      <div className="btn-row"><button className="btn ghost" onClick={() => dispatch({ type: 'TOGGLE_REVISIT_PANEL' })}>Cancel</button><button className="btn primary" onClick={handleRevisitSubmit} disabled={!state.revisitInput.trim()}>Regenerate Draft</button></div></>
+                      <div className="btn-row"><button className="btn ghost" onClick={() => dispatch({ type: 'TOGGLE_REVISIT_PANEL' })}>Cancel</button><button className="btn primary" onClick={handleRevisitSubmit} disabled={!state.revisitInput.trim() || state.revisitLoading}>{state.revisitLoading ? 'Regenerating…' : 'Regenerate Draft'}</button></div></>
                     )}
                   </div>
                 )}
@@ -1085,7 +1085,7 @@ function App() {
                 {state.revisitError && <div className="error-box" style={{ marginBottom: 10 }}>{state.revisitError}</div>}
                 {state.revisitLoading ? <div style={{ textAlign: 'center', padding: 16 }}><div className="spinner sm" /></div> : (
                   <><textarea className="text-input" style={{ minHeight: 80 }} placeholder="e.g. I want to add a duty on local authorities to report annually..." value={state.revisitInput} onChange={e => dispatch({ type: 'SET_REVISIT_INPUT', value: e.target.value })} />
-                  <div className="btn-row"><button className="btn ghost" onClick={() => dispatch({ type: 'TOGGLE_REVISIT_PANEL' })}>Cancel</button><button className="btn primary" onClick={handleRevisitSubmit} disabled={!state.revisitInput.trim()}>Regenerate Draft</button></div></>
+                  <div className="btn-row"><button className="btn ghost" onClick={() => dispatch({ type: 'TOGGLE_REVISIT_PANEL' })}>Cancel</button><button className="btn primary" onClick={handleRevisitSubmit} disabled={!state.revisitInput.trim() || state.revisitLoading}>{state.revisitLoading ? 'Regenerating…' : 'Regenerate Draft'}</button></div></>
                 )}
               </div>
             )}
@@ -1131,7 +1131,7 @@ function App() {
                           <textarea placeholder="e.g. I want to add a requirement to notify the relevant authority within 30 days..." value={state.redraftInput} onChange={e => dispatch({ type: 'SET_REDRAFT_INPUT', value: e.target.value })} />
                           {state.redraftError && <div className="error-box" style={{ marginTop: 8 }}>{state.redraftError}</div>}
                           {state.redraftLoading ? (<div style={{ textAlign: 'center', padding: '12px 0' }}><div className="spinner sm" /></div>) : (
-                            <div className="clause-editor-footer"><button className="btn ghost sm" onClick={() => dispatch({ type: 'CANCEL_REDRAFT' })}>Cancel</button><button className="btn primary sm" onClick={() => handleClauseRedraft(clause)} disabled={!state.redraftInput.trim()}>Redraft Clause</button></div>
+                            <div className="clause-editor-footer"><button className="btn ghost sm" onClick={() => dispatch({ type: 'CANCEL_REDRAFT' })}>Cancel</button><button className="btn primary sm" onClick={() => handleClauseRedraft(clause)} disabled={!state.redraftInput.trim() || state.redraftLoading}>{state.redraftLoading ? 'Redrafting…' : 'Redraft Clause'}</button></div>
                           )}
                         </div>
                       )}
