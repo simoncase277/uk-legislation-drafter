@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,10 +11,46 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// ── Auth route ────────────────────────────────────────────────────────────
+// Accepts a password, checks it against ACCESS_PASSWORD env var.
+// Returns a random session token on success.
+app.post('/api/auth', (req, res) => {
+  const accessPassword = process.env.ACCESS_PASSWORD;
+
+  if (!accessPassword) {
+    // No password configured — allow access (useful during initial setup)
+    const token = crypto.randomBytes(32).toString('hex');
+    return res.json({ success: true, token });
+  }
+
+  const { password } = req.body || {};
+
+  if (!password || password !== accessPassword) {
+    return res.status(401).json({ success: false });
+  }
+
+  const token = crypto.randomBytes(32).toString('hex');
+  res.json({ success: true, token });
+});
+
+// ── Token validation helper ───────────────────────────────────────────────
+function isValidToken(token) {
+  return typeof token === 'string' && token.length >= 64;
+}
+
 // ── Proxy route ───────────────────────────────────────────────────────────
-// The app sends requests here instead of directly to Anthropic.
-// This server adds the secret API key and forwards the request.
 app.post('/api/generate', async (req, res) => {
+  // Check access token if a password is configured
+  const accessPassword = process.env.ACCESS_PASSWORD;
+  if (accessPassword) {
+    const token = req.headers['x-access-token'];
+    if (!isValidToken(token)) {
+      return res.status(401).json({
+        error: { message: 'Unauthorised. Please log in again.' }
+      });
+    }
+  }
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
 
   if (!apiKey) {
@@ -34,8 +71,6 @@ app.post('/api/generate', async (req, res) => {
     });
 
     const data = await response.json();
-
-    // Pass the response (or error) straight back to the browser
     res.status(response.status).json(data);
 
   } catch (err) {
@@ -46,10 +81,10 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
-// ── Health check (Render uses this to verify the server is running) ───────
+// ── Health check ──────────────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-// ── Catch-all: serve the app for any other route ──────────────────────────
+// ── Catch-all ─────────────────────────────────────────────────────────────
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
