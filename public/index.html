@@ -22,6 +22,32 @@ const { useState, useReducer, useRef, useEffect, useCallback } = React;
 
 const API_ENDPOINT = '/api/generate';
 
+// ── Auth helpers ──────────────────────────────────────────────────────────
+const AUTH_TOKEN_KEY = 'uk_leg_auth_token';
+const AUTH_EXPIRY_KEY = 'uk_leg_auth_expiry';
+const AUTH_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+function getStoredAuth() {
+  try {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY);
+    const expiry = parseInt(localStorage.getItem(AUTH_EXPIRY_KEY) || '0', 10);
+    if (token && expiry > Date.now()) return token;
+  } catch {}
+  return null;
+}
+function storeAuth(token) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+  localStorage.setItem(AUTH_EXPIRY_KEY, String(Date.now() + AUTH_DURATION_MS));
+}
+function clearAuth() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(AUTH_EXPIRY_KEY);
+}
+function getAuthHeaders() {
+  const token = getStoredAuth();
+  return token ? { 'X-Access-Token': token } : {};
+}
+
 const SYSTEM_PROMPT = `You are an expert UK parliamentary drafter with deep knowledge of UK legislative conventions, the Legislation.gov.uk database, and Parliamentary procedure. You help non-legal experts draft primary legislation (Acts of Parliament) and secondary legislation (Statutory Instruments) for the UK Parliament.
 
 When drafting legislation:
@@ -296,6 +322,15 @@ const CSS = `
   .nav-btn.has-dot{position:relative}
   .nav-btn.has-dot::after{content:'';position:absolute;top:10px;right:8px;width:6px;height:6px;background:#c8a97e;border-radius:50%}
   .content{max-width:900px;margin:0 auto;padding:40px 24px}
+  .login-screen{min-height:100vh;background:#0e0c09;display:flex;align-items:center;justify-content:center;padding:24px}
+  .login-box{background:#13110c;border:1px solid #3a2e1a;border-radius:6px;padding:48px 40px;max-width:420px;width:100%;text-align:center}
+  .login-box .login-crest{font-size:3em;margin-bottom:20px}
+  .login-box h1{font-family:'Playfair Display',serif;font-size:1.6em;color:#f0e6cc;margin-bottom:8px}
+  .login-box p{font-size:.88em;color:#6a5c3a;font-style:italic;margin-bottom:32px}
+  .login-box label{display:block;font-size:.75em;color:#8a7a5a;letter-spacing:.06em;text-transform:uppercase;margin-bottom:6px;text-align:left}
+  .login-box input[type=password]{width:100%;background:#0e0c09;border:1px solid #2a2215;border-radius:3px;color:#e8d5b0;font-family:'Crimson Pro',serif;font-size:1em;padding:12px 14px;outline:none;margin-bottom:18px}
+  .login-box input[type=password]:focus{border-color:#c8a97e}
+  .login-error{background:#1a0c0c;border:1px solid #5a2020;border-radius:3px;padding:10px 14px;color:#c87878;font-size:.84em;margin-bottom:16px;text-align:left}
   .leg-toggle{display:flex;background:#13110c;border:1px solid #2a2215;border-radius:4px;overflow:hidden;margin-bottom:28px}
   .leg-toggle-btn{flex:1;background:none;border:none;color:#6a5c3a;font-family:'Crimson Pro',serif;font-size:.88em;padding:10px 16px;cursor:pointer;transition:all .2s;letter-spacing:.04em;text-align:center;border-right:1px solid #2a2215}
   .leg-toggle-btn:last-child{border-right:none}
@@ -464,6 +499,66 @@ const CSS = `
   .confirm-modal h3{margin-bottom:10px}
   .restore-banner{background:#1a1c10;border:1px solid #3a4a1a;border-radius:3px;padding:10px 14px;font-size:.82em;color:#8aaa5a;margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;gap:12px}
 `;
+
+function LoginScreen({ onLogin }) {
+  const [password, setPassword] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [error, setError] = React.useState('');
+
+  const handleSubmit = async () => {
+    if (!password.trim()) return;
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (data.success && data.token) {
+        storeAuth(data.token);
+        onLogin();
+      } else {
+        setError('Incorrect password — please try again.');
+        setPassword('');
+      }
+    } catch {
+      setError('Could not reach server. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="login-screen">
+      <style>{CSS}</style>
+      <div className="login-box">
+        <div className="login-crest">⚖️</div>
+        <h1>UK Legislation Drafter</h1>
+        <p>Tester access — please enter the access password to continue.</p>
+        {error && <div className="login-error">{error}</div>}
+        <label>Access password</label>
+        <input
+          type="password"
+          value={password}
+          onChange={e => setPassword(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleSubmit()}
+          placeholder="Enter password..."
+          autoFocus
+        />
+        <button
+          className="btn primary"
+          style={{ width: '100%' }}
+          onClick={handleSubmit}
+          disabled={loading || !password.trim()}
+        >
+          {loading ? 'Checking...' : 'Continue'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function Loading({ msg }) {
   return (
@@ -696,6 +791,7 @@ function ProjectsScreen({ state, dispatch }) {
 }
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!getStoredAuth());
   const [state, dispatch] = useReducer(appReducer, initialAppState);
   const draftRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -714,14 +810,19 @@ function App() {
 
   const project = getActiveProject(state);
 
+  if (!isAuthenticated) {
+    return <LoginScreen onLogin={() => setIsAuthenticated(true)} />;
+  }
+
   const callAPI = useCallback(async (userPrompt, titleHint, opts = {}) => {
     dispatch({ type: 'SET_LOADING', value: true });
     dispatch({ type: 'SET_ERROR', value: '' });
     try {
       const res = await fetch(API_ENDPOINT, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
         body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: userPrompt }] }),
       });
+      if (res.status === 401) { clearAuth(); setIsAuthenticated(false); return; }
       const data = await res.json();
       if (data.error) { dispatch({ type: 'SET_ERROR', value: 'Error: ' + data.error.message }); return; }
       const text = (data.content || []).map(b => b.text || '').join('');
@@ -784,7 +885,7 @@ function App() {
     if (!state.revisitInput.trim()) return;
     dispatch({ type: 'SET_REVISIT_LOADING', value: true });
     try {
-      const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: `The following legislation was drafted based on this brief. The user now wants to make these changes: ${state.revisitInput}\n\nPlease produce a revised draft incorporating these changes, keeping the same legislation type and overall structure where appropriate.\n\nExisting draft:\n\n${project.currentDraft}` }] }) });
+      const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: `The following legislation was drafted based on this brief. The user now wants to make these changes: ${state.revisitInput}\n\nPlease produce a revised draft incorporating these changes, keeping the same legislation type and overall structure where appropriate.\n\nExisting draft:\n\n${project.currentDraft}` }] }) });
       const data = await res.json();
       if (data.error) { dispatch({ type: 'SET_REVISIT_ERROR', value: 'Error: ' + data.error.message }); return; }
       const text = (data.content || []).map(b => b.text || '').join('');
@@ -799,7 +900,7 @@ function App() {
     dispatch({ type: 'SET_REDRAFT_LOADING', value: true });
     const legLabel = project?.legislationType === 'secondary' ? 'Statutory Instrument' : 'Act of Parliament';
     try {
-      const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: `This is a clause titled "${clause.title}" from a UK ${legLabel}. Its current text is:\n\n${clause.body}\n\nThe user wants to change it as follows: ${state.redraftInput}\n\nPlease redraft this clause in correct UK legislative style. Return only the clause body text — no title, no preamble, no explanation.` }] }) });
+      const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 1000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: `This is a clause titled "${clause.title}" from a UK ${legLabel}. Its current text is:\n\n${clause.body}\n\nThe user wants to change it as follows: ${state.redraftInput}\n\nPlease redraft this clause in correct UK legislative style. Return only the clause body text — no title, no preamble, no explanation.` }] }) });
       const data = await res.json();
       if (data.error) { dispatch({ type: 'SET_REDRAFT_ERROR', value: 'Error: ' + data.error.message }); return; }
       const newBody = (data.content || []).map(b => b.text || '').join('').trim();
@@ -813,7 +914,7 @@ function App() {
     dispatch({ type: 'SET_OVERSEAS_LOADING', value: true });
     try {
       const objective = project?.currentDraft ? `The user's current drafting objective is reflected in this draft:\n\n${project.currentDraft.substring(0, 1000)}...` : 'No current draft exists yet.';
-      const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: `The user wants to draw on the following overseas legislation: ${state.overseasInput}\n\n${objective}\n\nPlease:\n1. Briefly summarise what that legislation does and its key provisions.\n2. Identify the aspects most relevant to the user's drafting objective.\n3. Propose how equivalent provisions might be drafted under UK law, noting any jurisdictional adaptations needed.\n\nPresent your response in three clearly labelled sections: **Overview**, **Relevant Provisions**, and **UK Translation**.` }] }) });
+      const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: `The user wants to draw on the following overseas legislation: ${state.overseasInput}\n\n${objective}\n\nPlease:\n1. Briefly summarise what that legislation does and its key provisions.\n2. Identify the aspects most relevant to the user's drafting objective.\n3. Propose how equivalent provisions might be drafted under UK law, noting any jurisdictional adaptations needed.\n\nPresent your response in three clearly labelled sections: **Overview**, **Relevant Provisions**, and **UK Translation**.` }] }) });
       const data = await res.json();
       if (data.error) { dispatch({ type: 'SET_OVERSEAS_ERROR', value: 'Error: ' + data.error.message }); return; }
       dispatch({ type: 'SET_OVERSEAS_RESULT', result: (data.content || []).map(b => b.text || '').join('') });
@@ -830,7 +931,7 @@ function App() {
       const result = await mammoth.extractRawText({ arrayBuffer });
       const extractedText = result.value;
       if (!extractedText.trim()) { dispatch({ type: 'SET_UPLOAD_ERROR', value: "We couldn't read that file." }); return; }
-      const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: `The following text has been extracted from an uploaded draft of UK legislation. Please parse it into a structured list of clauses. Return the result as JSON in this exact format (no preamble, no markdown code fences):\n{"legislationType":"primary","title":"string","clauses":[{"number":"1","title":"string","body":"string"}]}\n\nExtracted text:\n\n${extractedText.substring(0, 12000)}` }] }) });
+      const res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', ...getAuthHeaders() }, body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 4000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: `The following text has been extracted from an uploaded draft of UK legislation. Please parse it into a structured list of clauses. Return the result as JSON in this exact format (no preamble, no markdown code fences):\n{"legislationType":"primary","title":"string","clauses":[{"number":"1","title":"string","body":"string"}]}\n\nExtracted text:\n\n${extractedText.substring(0, 12000)}` }] }) });
       const data = await res.json();
       if (data.error) { dispatch({ type: 'SET_UPLOAD_ERROR', value: 'Error: ' + data.error.message }); return; }
       const rawText = (data.content || []).map(b => b.text || '').join('').trim();
